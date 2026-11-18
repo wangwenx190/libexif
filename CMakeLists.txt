@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.25)
+project(libexif VERSION 0.6.26 LANGUAGES C)
+include(GNUInstallDirs)
+
+option(EXIF_BUILD_STATIC "Build static EXIF library" ON)
+option(EXIF_BUILD_SHARED "Build shared EXIF library" ON)
+configure_file(cmake/config.h.in config.h @ONLY)
+configure_file(cmake/stdint.h.in libexif/_stdint.h @ONLY)
+file(GLOB sources CONFIGURE_DEPENDS libexif/*.c libexif/*/*.c)
+foreach(kind IN ITEMS STATIC SHARED)
+    if(EXIF_BUILD_${kind})
+        string(TOLOWER "${kind}" suffix)
+        set(library "exif_${suffix}")
+        add_library(${library} ${kind} ${sources})
+        target_include_directories(${library} PUBLIC
+            "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
+            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
+            "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+        set_target_properties(${library} PROPERTIES POSITION_INDEPENDENT_CODE ON
+            WINDOWS_EXPORT_ALL_SYMBOLS ON)
+        if(kind STREQUAL "SHARED")
+            set_target_properties(${library} PROPERTIES OUTPUT_NAME exif SOVERSION 12
+                VERSION ${PROJECT_VERSION})
+        endif()
+        if(NOT WIN32)
+            target_link_libraries(${library} PRIVATE m)
+        endif()
+        install(TARGETS ${library})
+    endif()
+endforeach()
+install(DIRECTORY libexif DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    FILES_MATCHING PATTERN "*.h")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libexif/_stdint.h"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/libexif")
+install(DIRECTORY LICENSES DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/libexif")
+
+if(WIN32)
+    string(REPLACE "." "," resource_version_csv "${PROJECT_VERSION}")
+    set(resource_version "${PROJECT_VERSION}")
+    foreach(library IN ITEMS exif_shared)
+        if(TARGET ${library})
+            get_target_property(library_type ${library} TYPE)
+            if(library_type STREQUAL "SHARED_LIBRARY" OR library_type STREQUAL "MODULE_LIBRARY")
+                enable_language(RC)
+                configure_file(cmake/LibraryVersion.rc.in LibraryVersion.rc @ONLY)
+                target_sources(${library} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/LibraryVersion.rc")
+            endif()
+        endif()
+    endforeach()
+endif()

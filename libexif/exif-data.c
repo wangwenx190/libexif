@@ -987,12 +987,13 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 	if (ds < 14)
 		return;
 
-	/* The JPEG APP1 section can be no longer than 64 KiB (including a
-	   16-bit length), so cap the data length to protect against overflow
-	   in future offset calculations */
+	/* This embedder also reads PNG/WebP EXIF blocks. Preserve their existing
+	   1 MiB TIFF budget plus the six-byte EXIF prefix, while retaining a
+	   small bound for the subsequent unsigned offset calculations. */
+	enum { MaximumMetadataBytes = 1024 * 1024 + 6 };
 	fullds = ds;
-	if (ds > 0xfffe)
-		ds = 0xfffe;
+	if (ds > MaximumMetadataBytes)
+		ds = MaximumMetadataBytes;
 
 	/* Byte order (offset 6, length 2) */
 	if (!memcmp (d + 6, "II", 2))
@@ -1014,7 +1015,7 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 	exif_log (data->priv->log, EXIF_LOG_CODE_DEBUG, "ExifData", 
 		  "IFD 0 at %i.", (int) offset);
 
-	/* ds is restricted to 16 bit above, so offset is restricted too, and offset+8 should not overflow. */
+	/* offset is bounded by the admitted metadata before adding header bytes. */
 	if (offset > ds || offset + 6 + 2 > ds)
 		return;
 
@@ -1023,7 +1024,7 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 
 	/* IFD 1 offset */
 	n = exif_get_short (d + 6 + offset, data->priv->order);
-	/* offset < 2<<16, n is 16 bit at most, so this op will not overflow */
+	/* offset is at most 1 MiB and n is 16 bit, so this op will not overflow. */
 	if (offset + 6 + 2 + 12 * n + 4 > ds)
 		return;
 
@@ -1032,7 +1033,7 @@ exif_data_load_data (ExifData *data, const unsigned char *d_orig,
 		exif_log (data->priv->log, EXIF_LOG_CODE_DEBUG, "ExifData",
 			  "IFD 1 at %i.", (int) offset);
 
-		/* Sanity check. ds is ensured to be above 6 above, offset is 16bit */
+		/* Sanity check. ds is ensured to be above the six-byte prefix. */
 		if (offset > ds - 6) {
 			exif_log (data->priv->log, EXIF_LOG_CODE_CORRUPT_DATA,
 				  "ExifData", "Bogus offset of IFD1.");
